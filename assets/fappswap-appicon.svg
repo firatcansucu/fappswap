@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="field" x1="0.13" y1="0" x2="0.87" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"></stop>
+      <stop offset="0.52" stop-color="#F0EFF2"></stop>
+      <stop offset="1" stop-color="#DCDAE0"></stop>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.75"></stop>
+      <stop offset="0.46" stop-color="#FFFFFF" stop-opacity="0"></stop>
+    </linearGradient>
+    <clipPath id="tile"><rect x="0" y="0" width="1024" height="1024" rx="229" ry="229"></rect></clipPath>
+    <clipPath id="railBand"><rect x="0" y="0" width="1024" height="389"></rect></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#field)"></rect>
+    <rect width="1024" height="1024" fill="url(#sheen)"></rect>
+    <text x="512" y="512" text-anchor="middle" dominant-baseline="central" font-family="SF Pro Display, -apple-system, Helvetica Neue" font-size="592" font-weight="500" fill="#1C1C1E">⌥</text>
+    <g clip-path="url(#railBand)">
+      <text x="512" y="512" text-anchor="middle" dominant-baseline="central" font-family="SF Pro Display, -apple-system, Helvetica Neue" font-size="592" font-weight="500" fill="#FF9500">⌥</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the DMG
+    runs-on: macos-15
+
+    steps:
+      # Pinned to a commit, not a tag: this is the only third-party code in
+      # the build, and the DMG people download comes out of this pipeline.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Import the signing certificate
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Test
+        run: swift test
+
+      - name: Build, notarize and staple the DMG
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          export NOTARY_KEY_PATH="$RUNNER_TEMP/notary.p8"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$NOTARY_KEY_PATH"
+          ./scripts/release.sh
+          rm "$NOTARY_KEY_PATH"
+
+      # The bundle version is written by hand in scripts/bundle.sh, so it is
+      # entirely possible to tag v1.3 while the plist still says 1.2. Catch it
+      # here rather than shipping a DMG whose filename and contents disagree.
+      - name: Check the tag matches the bundle version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' fappswap.app/Contents/Info.plist)"
+          echo "tag: $TAG_VERSION   bundle: $BUNDLE_VERSION"
+          if [ "$TAG_VERSION" != "$BUNDLE_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies version $TAG_VERSION but the bundle says $BUNDLE_VERSION. Bump CFBundleShortVersionString in scripts/bundle.sh, or delete and re-tag."
+            exit 1
+          fi
+          echo "DMG_PATH=fappswap-${BUNDLE_VERSION}.dmg" >> "$GITHUB_ENV"
+          echo "ZIP_PATH=fappswap-${BUNDLE_VERSION}.zip" >> "$GITHUB_ENV"
+          # A release signed under any team but ours must never ship — not just
+          # an ad-hoc fallback. Certificate renewal can leave two valid
+          # "Developer ID Application" identities in the keychain at once, in
+          # keychain order (not anything stable), so scripts/bundle.sh and
+          # scripts/release.sh both pin to this Team ID rather than trust
+          # whichever identity sorts first. This is the belt-and-suspenders
+          # check on the artifact those scripts actually produced: a build
+          # signed under the wrong team silently drops every existing user's
+          # Accessibility grant (TCC keys it to bundle ID + Team ID, not the
+          # signer's name) and gets permanently rejected by the in-app
+          # updater, which also checks Team ID.
+          TEAM_ID="KRCKSFNTNV"
+          codesign -dvv fappswap.app 2>&1 | grep -q "^TeamIdentifier=$TEAM_ID\$" \
+            || { echo "::error::Release build is not signed by our Developer ID (team $TEAM_ID)"; exit 1; }
+          xcrun stapler validate fappswap.app
+
+      - name: Assemble the release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Pull this version's section out of the changelog, stopping at the next heading.
+          awk -v header="## [$VERSION]" '
+            index($0, header) == 1 { found = 1; next }
+            found && /^## \[/       { exit }
+            found                   { print }
+          ' CHANGELOG.md > notes.md
+
+          if [ ! -s notes.md ]; then
+            echo "::warning::No [$VERSION] section found in CHANGELOG.md — falling back to generated notes."
+            echo "GENERATE_NOTES=true" >> "$GITHUB_ENV"
+          fi
+
+          # Not every downloader reads the README, so the install steps — just
+          # Homebrew or drag-to-Applications now that releases are notarized, no
+          # Gatekeeper workaround needed — ship with the release too.
+          cat >> notes.md <<'NOTES'
+
+          ---
+
+          ### Installing
+
+          With [Homebrew](https://brew.sh):
+
+          ```
+          brew install firatcansucu/tap/fappswap
+          ```
+
+          Or mount the DMG and drag `fappswap.app` to Applications. fappswap is signed and
+          notarized, so it opens like any other app.
+
+          Grant Accessibility once under **System Settings → Privacy & Security →
+          Accessibility** — nothing works without it. The grant now survives updates.
+
+          **Upgrading from 1.3 or earlier?** Those builds were unsigned, so macOS treats
+          this one as a new app: re-grant Accessibility once (remove the old entry with
+          **−**, add the new one with **+**). This is the last time — from now on updates
+          keep the permission.
+          NOTES
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$ZIP_PATH" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            ${GENERATE_NOTES:+--generate-notes}
+
+      - name: Update the Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/firatcansucu/homebrew-tap.git" tap
+          cd tap
+          sed -i '' \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" \
+            Casks/fappswap.rb
+
+          # sed matches nothing, silently, if the cask's formatting ever drifts
+          # from what we assume here. Confirm both lines actually landed before
+          # committing, so a mismatch fails loudly instead of leaving the tap
+          # stale with no indication anything went wrong.
+          grep -qF "  version \"${VERSION}\"" Casks/fappswap.rb \
+            || { echo "::error::Casks/fappswap.rb has no '  version \"${VERSION}\"' line after sed — cask formatting may have changed."; exit 1; }
+          grep -qF "  sha256 \"${SHA}\"" Casks/fappswap.rb \
+            || { echo "::error::Casks/fappswap.rb has no '  sha256 \"${SHA}\"' line after sed — cask formatting may have changed."; exit 1; }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "fappswap ${VERSION}"
+          git push

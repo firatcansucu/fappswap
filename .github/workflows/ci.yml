@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to a PR makes the in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-15
+
+    steps:
+      # Pinned to a commit, not a tag: this is the only third-party code in
+      # the build, and the DMG people download comes out of this pipeline.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      # FappSwapApp has no unit tests, so this is the smoke test: it catches a
+      # broken bundle.sh, a missing icns, or code that compiles in debug but not
+      # release, none of which `swift test` would notice.
+      - name: Bundle the app
+        run: ./scripts/bundle.sh
+
+      - name: Verify the signature
+        run: codesign --verify --deep --strict --verbose=2 fappswap.app

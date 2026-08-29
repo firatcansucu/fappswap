@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/firatcansucu/fappswap/discussions
+    about: Not sure it's a bug? Want to talk through a feature before filing it? Start here.
+  - name: Security vulnerability
+    url: https://github.com/firatcansucu/fappswap/blob/main/SECURITY.md
+    about: Please report security issues privately, never as a public issue. See the policy for how.
+  - name: Shortcuts stopped working after a rebuild
+    url: https://github.com/firatcansucu/fappswap/blob/main/CONTRIBUTING.md#the-ad-hoc-signing-gotcha
+    about: Almost always the Accessibility grant being invalidated by a new code signature. Read this first.

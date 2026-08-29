@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest something fappswap should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are genuinely welcome. Two things worth knowing before you write:
+
+        fappswap is a deliberately focused utility, so "no" and "not yet" are both likely
+        answers — neither is a comment on the quality of your idea. And it's MIT licensed:
+        if I turn something down, you can always build it yourself.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: Describe what you're trying to do, not the solution you have in mind. It's the part I can't guess.
+      placeholder: I have four Firefox windows open and no fast way to get to a specific one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like it to do?
+      validations:
+        required: true
+
+  - type: dropdown
+    id: fit
+    attributes:
+      label: Does this fit the direction?
+      description: |
+        fappswap is about reclaiming keys that currently do nothing useful — the Option
+        layer above all. See "Where it's going" in the README.
+      options:
+        - "Yes — it's on the roadmap or close to it"
+        - "Sort of — different, but the same spirit"
+        - "Probably not, but I want to make the case anyway"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+      description: Another app, a workaround, or just living with it. Useful for judging how much this matters.
+
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Would you want to build it?
+      options:
+        - label: I'd be up for opening a PR if you're interested in the idea
